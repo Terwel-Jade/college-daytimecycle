@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Day-Night Background</title>
+  <title>Lokal ng College Day-Night Background</title>
   <style>
     html { background: #0b1026; } /* fallback while images load (html only, not body) */
     
@@ -37,7 +37,6 @@
       padding: 1rem;
     }
     #clock { font-size: clamp(3rem, 12vw, 7rem); font-weight: 600; letter-spacing: .02em; }
-    #phase { font-size: 1.1rem; opacity: .85; margin-top: .25rem; }
   </style>
 </head>
 <body>
@@ -46,7 +45,6 @@
   <main>
     <div>
       <div id="clock">--:--</div>
-      <div id="phase"></div>
     </div>
   </main>
 
@@ -122,11 +120,7 @@
       // Demo text
       const d = new Date();
       document.getElementById("clock").textContent =
-        d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      document.getElementById("phase").textContent =
-        h >= 7 && h < 16.5 ? "Daytime" :
-        h >= 16.5 && h < 19 ? "Evening" :
-        h >= 5.25 && h < 7 ? "Morning" : "Night";
+        d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     }
 
     update();
