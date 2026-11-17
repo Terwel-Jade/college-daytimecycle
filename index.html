@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Day-Night Background</title>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #0b1026; /* fallback while images load */
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* Each image gets its own full-screen layer; JS sets their opacity. */
+    .bg {
+      position: fixed;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      opacity: 0;
+      transition: opacity 2s linear;
+      z-index: -1;
+    }
+
+    /* ---- Demo content: replace with your own ---- */
+    main {
+      min-height: 100%;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: #fff;
+      text-shadow: 0 2px 12px rgba(0, 0, 0, .55);
+      padding: 1rem;
+    }
+    #clock { font-size: clamp(3rem, 12vw, 7rem); font-weight: 600; letter-spacing: .02em; }
+    #phase { font-size: 1.1rem; opacity: .85; margin-top: .25rem; }
+  </style>
+</head>
+<body>
+  <div id="layers"></div>
+
+  <main>
+    <div>
+      <div id="clock">--:--</div>
+      <div id="phase"></div>
+    </div>
+  </main>
+
+  <script>
+    /* ================= CONFIG ================= */
+
+    // Your 4 images (paths relative to this file, e.g. in an "images" folder)
+    const IMAGES = {
+      day:   "images/day.jpg",
+      dusk1: "images/dusk1.jpg",   // first dusk variant (closer to daylight)
+      dusk2: "images/dusk2.jpg",   // second dusk variant (closer to night)
+      night: "images/night.jpg",
+    };
+
+    // Timeline in 24h local time (decimal hours). Evening runs
+    // day -> dusk1 -> dusk2 -> night; the morning is that same list in reverse.
+    // Between two keyframes the images crossfade gradually.
+    const TIMELINE = [
+      { t: 0.00,  img: "night" },
+      { t: 4.50,  img: "night" },  // night holds until here
+      { t: 5.25,  img: "dusk2"  }, // dawn begins (reverse of dusk)
+      { t: 6.00,  img: "dusk1"  },
+      { t: 7.00,  img: "day"    }, // full daylight
+      { t: 16.50, img: "day"    }, // daylight holds until here
+      { t: 17.50, img: "dusk1"  },
+      { t: 18.25, img: "dusk2"  },
+      { t: 19.00, img: "night"  }, // full night
+      { t: 24.00, img: "night"  },
+    ];
+
+    const UPDATE_EVERY_MS = 30 * 1000;
+
+    /* ================= LOGIC ================= */
+
+    const layersEl = document.getElementById("layers");
+    const layers = {};
+
+    for (const [name, url] of Object.entries(IMAGES)) {
+      const el = document.createElement("div");
+      el.className = "bg";
+      el.style.backgroundImage = `url("${url}")`;
+      layersEl.appendChild(el);
+      layers[name] = el;
+      new Image().src = url; // preload
+    }
+
+    const smooth = x => x * x * (3 - 2 * x); // smoothstep easing
+
+    function currentHour() {
+      // Test any time by adding ?time=18.5 (or ?time=18:30) to the URL
+      const p = new URLSearchParams(location.search).get("time");
+      if (p) {
+        const [h, m = 0] = p.split(":").map(Number);
+        if (!isNaN(h)) return h + (m || 0) / 60;
+      }
+      const d = new Date();
+      return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+    }
+
+    function update() {
+      const h = currentHour();
+
+      let i = TIMELINE.findIndex((k, idx) => h >= k.t && h < TIMELINE[idx + 1]?.t);
+      if (i < 0) i = TIMELINE.length - 2;
+      const a = TIMELINE[i], b = TIMELINE[i + 1];
+      const t = smooth((h - a.t) / (b.t - a.t));
+
+      const opacity = { day: 0, dusk1: 0, dusk2: 0, night: 0 };
+      opacity[a.img] += 1 - t;
+      opacity[b.img] += t;
+      for (const name in layers) layers[name].style.opacity = opacity[name];
+
+      // Demo text
+      const d = new Date();
+      document.getElementById("clock").textContent =
+        d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      document.getElementById("phase").textContent =
+        h >= 7 && h < 16.5 ? "Daytime" :
+        h >= 16.5 && h < 19 ? "Evening" :
+        h >= 5.25 && h < 7 ? "Morning" : "Night";
+    }
+
+    update();
+    setInterval(update, UPDATE_EVERY_MS);
+  </script>
+</body>
+</html>
