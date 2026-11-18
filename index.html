@@ -5,12 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lokal ng College Day-Night Background</title>
   <style>
-    html { background: #0b1026; } /* fallback while images load (html only, not body) */
-    
+    html { background: #0b1026; } /* fallback while images load */
+
     html, body {
       height: 100%;
       margin: 0;
-      /* background: #0b1026; /* fallback while images load */ */
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     }
 
@@ -22,9 +21,10 @@
       background-position: center;
       background-repeat: no-repeat;
       opacity: 0;
-      transition: opacity 2s linear;
       z-index: -1;
     }
+    /* Crossfade is enabled only after the first paint, so load doesn't fade in from black */
+    .ready .bg { transition: opacity 2s linear; }
 
     /* ---- Demo content: replace with your own ---- */
     main {
@@ -51,50 +51,64 @@
   <script>
     /* ================= CONFIG ================= */
 
-    // Your 4 images (paths relative to this file, e.g. in an "images" folder)
     const IMAGES = {
       day:   "images/day.jpg",
-      dusk1: "images/dusk1.jpg",   // first dusk variant (closer to daylight)
-      dusk2: "images/dusk2.jpg",   // second dusk variant (closer to night)
+      dusk1: "images/dusk1.jpg",   // closer to daylight
+      dusk2: "images/dusk2.jpg",   // closer to night
       night: "images/night.jpg",
     };
 
-    // Timeline in 24h local time (decimal hours). Evening runs
-    // day -> dusk1 -> dusk2 -> night; the morning is that same list in reverse.
-    // Between two keyframes the images crossfade gradually.
+    // 24h local time (decimal hours). Images crossfade between keyframes.
     const TIMELINE = [
       { t: 0.00,  img: "night" },
-      { t: 4.50,  img: "night" },  // night holds until here
-      { t: 5.25,  img: "dusk2"  }, // dawn begins (reverse of dusk)
-      { t: 6.00,  img: "dusk1"  },
-      { t: 7.00,  img: "day"    }, // full daylight
-      { t: 16.50, img: "day"    }, // daylight holds until here
-      { t: 17.50, img: "dusk1"  },
-      { t: 18.25, img: "dusk2"  },
-      { t: 19.00, img: "night"  }, // full night
-      { t: 24.00, img: "night"  },
+      { t: 4.50,  img: "night" },
+      { t: 5.25,  img: "dusk2" },
+      { t: 6.00,  img: "dusk1" },
+      { t: 7.00,  img: "day"   },
+      { t: 16.50, img: "day"   },
+      { t: 17.50, img: "dusk1" },
+      { t: 18.25, img: "dusk2" },
+      { t: 19.00, img: "night" },
+      { t: 24.00, img: "night" },
     ];
 
-    const UPDATE_EVERY_MS = 30 * 1000;
+    const UPDATE_EVERY_MS   = 15 * 1000; // wall-clock based, so exact cadence doesn't matter
+    const AUTO_RELOAD_HOURS = 6;         // soft reload to pick up replaced image files; 0 = disabled
+    const IMAGE_RETRIES     = 5;
 
     /* ================= LOGIC ================= */
 
     const layersEl = document.getElementById("layers");
     const layers = {};
 
-    for (const [name, url] of Object.entries(IMAGES)) {
+    // Load an image into a layer; on failure, retry with a cache-busting query.
+    function loadLayer(name, attempt = 0) {
+      const base = IMAGES[name];
+      const url = attempt === 0 ? base : `${base}?retry=${Date.now()}`;
+      const probe = new Image();
+      probe.onload = () => { layers[name].style.backgroundImage = `url("${url}")`; };
+      probe.onerror = () => {
+        if (attempt < IMAGE_RETRIES) {
+          setTimeout(() => loadLayer(name, attempt + 1), Math.min(30000, 2000 * 2 ** attempt));
+        } else {
+          console.error("Giving up on image:", base);
+        }
+      };
+      probe.src = url;
+    }
+
+    for (const name of Object.keys(IMAGES)) {
       const el = document.createElement("div");
       el.className = "bg";
-      el.style.backgroundImage = `url("${url}")`;
       layersEl.appendChild(el);
       layers[name] = el;
-      new Image().src = url; // preload
+      loadLayer(name);
     }
 
     const smooth = x => x * x * (3 - 2 * x); // smoothstep easing
 
     function currentHour() {
-      // Test any time by adding ?time=18.5 (or ?time=18:30) to the URL
+      // Test any time with ?time=18.5 or ?time=18:30
       const p = new URLSearchParams(location.search).get("time");
       if (p) {
         const [h, m = 0] = p.split(":").map(Number);
@@ -117,14 +131,36 @@
       opacity[b.img] += t;
       for (const name in layers) layers[name].style.opacity = opacity[name];
 
-      // Demo text
-      const d = new Date();
-      document.getElementById("clock").textContent =
-        d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      // Optional clock (only if #clock exists in the HTML)
+      const clock = document.getElementById("clock");
+      if (clock) {
+        clock.textContent = new Date().toLocaleTimeString([], {
+          hour: "2-digit", minute: "2-digit", second: "2-digit",
+        });
+      }
     }
 
-    update();
-    setInterval(update, UPDATE_EVERY_MS);
+    // One failed tick must never stop future ticks.
+    function safeUpdate() {
+      try { update(); } catch (err) { console.error("update failed:", err); }
+    }
+
+    // First paint without transition, then enable crossfades.
+    safeUpdate();
+    requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.add("ready")));
+
+    setInterval(safeUpdate, UPDATE_EVERY_MS);
+
+    // Re-sync immediately when the source wakes up (scene switch, OBS throttling, sleep/resume).
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) safeUpdate(); });
+    window.addEventListener("focus", safeUpdate);
+    window.addEventListener("pageshow", safeUpdate);
+
+    // Periodic soft reload: guarantees fresh code/images eventually. Safe because
+    // the page always computes the correct state from the clock on load.
+    if (AUTO_RELOAD_HOURS > 0) {
+      setTimeout(() => location.reload(), AUTO_RELOAD_HOURS * 3600 * 1000);
+    }
   </script>
 </body>
 </html>
